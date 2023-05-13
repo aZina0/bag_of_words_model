@@ -49,6 +49,11 @@ def parse_word_list(word_list):
             continue
 
         word_list[index] = word_list[index].lower()
+
+        if word_list[index] in ["i", "pa", "te", "ni", "niti", "a", "ali", "nego", "već", "no", "na", "o", "po", "pri", "prema", "u", "je", "ostalo", "se", "za", "su", "s", "od", "da", "iz", "sa", "to", "ili", "koji", "kao", "što", "nakon", "do"]:
+            del word_list[index]
+            continue
+
         index += 1
 
 
@@ -79,7 +84,7 @@ def get_vector_from_links(links):
 
         for word in word_list:
             if word not in vector:
-                vector[word] = 0
+                vector[word] = 1
             else:
                 vector[word] += 1
 
@@ -89,24 +94,38 @@ def get_vector_from_links(links):
 
 def calculate_probabilities(sport_vector, kultura_vector, lifestyle_vector, test_vector):
     hits = {
-        "sport": 0,
-        "kultura": 0,
-        "lifestyle": 0,
+        "sport": {"count": 0, "vector": {}},
+        "kultura": {"count": 0, "vector": {}},
+        "lifestyle": {"count": 0, "vector": {}},
     }
 
     for key in test_vector:
         if key in sport_vector:
-            hits["sport"] += min(test_vector[key], sport_vector[key])
+            hits["sport"]["count"] += min(test_vector[key], sport_vector[key])
+            hits["sport"]["vector"][key] = min(test_vector[key], sport_vector[key])
         if key in kultura_vector:
-            hits["kultura"] += min(test_vector[key], kultura_vector[key])
+            hits["kultura"]["count"] += min(test_vector[key], kultura_vector[key])
+            hits["kultura"]["vector"][key] = min(test_vector[key], kultura_vector[key])
         if key in lifestyle_vector:
-            hits["lifestyle"] += min(test_vector[key], lifestyle_vector[key])
+            hits["lifestyle"]["count"] += min(test_vector[key], lifestyle_vector[key])
+            hits["lifestyle"]["vector"][key] = min(test_vector[key], lifestyle_vector[key])
 
-    summ = hits["sport"] + hits["kultura"] + hits["lifestyle"]
+    summ = hits["sport"]["count"] + hits["kultura"]["count"] + hits["lifestyle"]["count"]
 
-    hits = get_sorted_dictionary(hits)
+    hits = dict(sorted(hits.items(), key=lambda item: item[1]["count"], reverse=True))
     for category in hits:
-        print(category, hits[category] / summ * 100)
+        print(category, hits[category]["count"] / summ * 100, hits[category]["count"])
+
+    f = open("result.txt", "w", encoding="utf-8")
+    for category in hits:
+        hits[category]["vector"] = dict(sorted(hits[category]["vector"].items(), key=lambda item: item[1], reverse=True))
+        f.write(category + ": " + str(hits[category]["count"] / summ * 100) + " -> " + str(hits[category]["count"]))
+        f.write("\n")
+        for key in hits[category]["vector"]:
+            f.write(key + ": " + str(hits[category]["vector"][key]))
+            f.write("\n")
+        f.write("\n")
+    f.close()
 
 sport_links = [
     "https://sportske.jutarnji.hr/sn/nogomet/hnl/klubovi/osijek/za-osijekov-potop-je-najzasluzniji-neocekivani-junak-odradio-je-sve-zaustavio-miereza-i-zabio-kad-je-trebalo-15335467",
@@ -151,7 +170,9 @@ sport_vector = get_vector_from_links(sport_links)
 kultura_vector = get_vector_from_links(kultura_links)
 lifestyle_vector = get_vector_from_links(lifestyle_links)
 
-test_vector = get_vector_from_links(["https://hr.wikipedia.org/wiki/Umjetnost"])
+print(sport_vector)
+
+test_vector = get_vector_from_links(["https://hr.wikipedia.org/wiki/Luka_Modri%C4%87"])
 
 calculate_probabilities(sport_vector, kultura_vector, lifestyle_vector, test_vector)
 
