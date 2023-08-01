@@ -30,7 +30,7 @@ def get_sentence_list(html_text):
             tag_close_start = html_text.find("</" + tag + ">")
             if tag_close_start >= 0:
                 tag_close_end = tag_close_start + len("</" + tag + ">")
-                html_text = html_text[0:tag_close_start] + html_text[tag_close_end:-1]
+                html_text = html_text[0:tag_close_start] + " " + html_text[tag_close_end:-1]
 
     while html_text.find("<") >= 0 and html_text.find(">") >= 0:
         start_index = html_text.find("<")
@@ -44,15 +44,9 @@ def get_sentence_list(html_text):
     html_text = html_text.replace("&#8217;", '"')
     html_text = html_text.replace("&#8220;", '"')
     html_text = html_text.replace("&#8221;", '"')
-
     html_text = html_text.replace("&#91;", " ")
     html_text = html_text.replace("&#93;", "")
-
     html_text = html_text.replace("&nbsp;", " ")
-
-    # f = open("words.txt", "w", encoding="utf-8")
-    # f.write(html_text)
-    # f.close()
 
     sentence_list = html_text.split("\n")
     sentence_index = 0
@@ -64,7 +58,7 @@ def get_sentence_list(html_text):
 
         sentence_index += 1
 
-    f = open("words1.txt", "w", encoding="utf-8")
+    f = open("raw_sentences.txt", "w", encoding="utf-8")
     for sentence in sentence_list:
         f.write(sentence)
         f.write("\n")
@@ -90,7 +84,7 @@ def get_sentence_list(html_text):
 
         sentence_index += 1
 
-    f = open("words2.txt", "w", encoding="utf-8")
+    f = open("split_sentences.txt", "w", encoding="utf-8")
     for sentence in sentence_list:
         f.write(sentence)
         f.write("\n")
@@ -101,18 +95,42 @@ def get_sentence_list(html_text):
         sentence_list[sentence_index] = sentence_list[sentence_index].split()
         sentence_index += 1
 
+    # Postavi sva slova svih riječi u "lowercase"
+    for sentence_index in range(len(sentence_list)):
+        for word_index in range(len(sentence_list[sentence_index])):
+            sentence_list[sentence_index][word_index] = sentence_list[sentence_index][word_index].lower()
+
+    # n-grami
     NUMBER = 3
-    listt = []
+    n_gram_list = []
     sentence_index = 0
     while sentence_index < len(sentence_list):
         word_index = 0
         while word_index + NUMBER <= len(sentence_list[sentence_index]):
-            listt.append(sentence_list[sentence_index][word_index:word_index+NUMBER])
+            n_gram_list.append(sentence_list[sentence_index][word_index:word_index+NUMBER])
             word_index += 1
 
         sentence_index += 1
 
-    print(listt)
+    # Izbaci sve n_grame koji sadrže riječi koje se ne sastoje od znakova abecede
+    n_gram_index = 0
+    while n_gram_index < len(n_gram_list):
+        valid = True
+        for word in n_gram_list[n_gram_index]:
+            if not word.isalpha():
+                valid = False
+                break
+
+        if not valid:
+            n_gram_list.pop(n_gram_index)
+            continue
+        n_gram_index += 1
+
+    f = open("n_grams.txt", "w", encoding="utf-8")
+    for n_gram in n_gram_list:
+        f.write(" ".join(n_gram))
+        f.write("\n")
+    f.close()
 
     return sentence_list
 
@@ -240,8 +258,8 @@ lifestyle_links = [
     # "https://www.jutarnji.hr/life/tehnologija/facebook-spijuni-oprez-drustvena-mreza-korisnicima-koje-promatrate-salje-zahtjeve-za-prijateljstvima-15335197",
 ]
 
-sport_vector = get_vector_from_links(sport_links)
-kultura_vector = get_vector_from_links(kultura_links)
+# sport_vector = get_vector_from_links(sport_links)
+# kultura_vector = get_vector_from_links(kultura_links)
 lifestyle_vector = get_vector_from_links(lifestyle_links)
 
 # print(sport_vector)
