@@ -1,8 +1,28 @@
 import requests
+import stemming
+import crodict_parser
+
+vectors = {
+    "politika": {},
+    "gospodarstvo": {},
+    "sport": {},
+    "glazba": {},
+    "filmovi_serije": {},
+    "tehnologija": {},
+}
 
 
-def get_sentence_list(html_text):
-    f = open("html.txt", "w", encoding="utf-8")
+invalid_words = []
+with open("nebitne_rijeci.txt", "r", encoding="utf-8") as file:
+    for line in file:
+        line = line.strip()
+        if line != "" and line[0] != "/":
+            invalid_words.append(line)
+
+
+
+def get_n_grams(html_text, n):
+    f = open("temp/html.txt", "w", encoding="utf-8")
     f.write(html_text)
     f.close()
 
@@ -21,8 +41,13 @@ def get_sentence_list(html_text):
         end_index = html_text.find("</script>") + len("</script>")
         html_text = html_text[0:start_index] + "\n" + html_text[end_index:-1]
 
+    while html_text.find("<style") >= 0 and html_text.find("</style>") >= 0:
+        start_index = html_text.find("<style")
+        end_index = html_text.find("</style>") + len("</style>")
+        html_text = html_text[0:start_index] + "\n" + html_text[end_index:-1]
+
     for tag in ["a", "span", "b", "i", "sup", "strong"]:
-        while html_text.find("<" + tag) >= 0:
+        while html_text.find("<" + tag) >= 0 and html_text.find("</" + tag + ">") >= 0:
             tag_open_start = html_text.find("<" + tag)
             tag_open_end = html_text.find(">", tag_open_start) + len(">")
             html_text = html_text[0:tag_open_start] + html_text[tag_open_end:-1]
@@ -58,7 +83,7 @@ def get_sentence_list(html_text):
 
         sentence_index += 1
 
-    f = open("raw_sentences.txt", "w", encoding="utf-8")
+    f = open("temp/raw_sentences.txt", "w", encoding="utf-8")
     for sentence in sentence_list:
         f.write(sentence)
         f.write("\n")
@@ -84,134 +109,173 @@ def get_sentence_list(html_text):
 
         sentence_index += 1
 
-    f = open("split_sentences.txt", "w", encoding="utf-8")
+    f = open("temp/split_sentences.txt", "w", encoding="utf-8")
     for sentence in sentence_list:
         f.write(sentence)
         f.write("\n")
     f.close()
+
+    # Pretvori sve u lowercase
+    for sentence_index in range(len(sentence_list)):
+        sentence_list[sentence_index] = sentence_list[sentence_index].lower()
+
+
+    n_grams = []
 
     sentence_index = 0
     while sentence_index < len(sentence_list):
         sentence_list[sentence_index] = sentence_list[sentence_index].split()
         sentence_index += 1
 
-    # Postavi sva slova svih riječi u "lowercase"
-    for sentence_index in range(len(sentence_list)):
-        for word_index in range(len(sentence_list[sentence_index])):
-            sentence_list[sentence_index][word_index] = sentence_list[sentence_index][word_index].lower()
-
-    # n-grami
-    NUMBER = 3
-    n_gram_list = []
     sentence_index = 0
     while sentence_index < len(sentence_list):
         word_index = 0
-        while word_index + NUMBER <= len(sentence_list[sentence_index]):
-            n_gram_list.append(sentence_list[sentence_index][word_index:word_index+NUMBER])
+        while word_index + n <= len(sentence_list[sentence_index]):
+            n_grams.append(sentence_list[sentence_index][word_index:word_index+n])
             word_index += 1
 
         sentence_index += 1
 
-    # Izbaci sve n_grame koji sadrže riječi koje se ne sastoje od znakova abecede
+    return n_grams
+
+
+
+def parse_n_grams(n_grams):
     n_gram_index = 0
-    while n_gram_index < len(n_gram_list):
+    while n_gram_index < len(n_grams):
         valid = True
-        for word in n_gram_list[n_gram_index]:
+
+        # Izbaci sve n_torke koje sadrže riječi koje se ne sastoje od znakova abecede
+        for word in n_grams[n_gram_index]:
             if not word.isalpha():
                 valid = False
                 break
 
+        if valid:
+            # Izbaci sve n_torke koje sadrže riječi koje se smatraju kao neznačajne (veznici, čestice...)
+            for word in n_grams[n_gram_index]:
+                if word in invalid_words:
+                    valid = False
+                    break
+
+        # if valid:
+        #     word_index = 0
+        #     while word_index < len(n_grams[n_gram_index]):
+        #         n_grams[n_gram_index][word_index] = stemming.process_word(n_grams[n_gram_index][word_index])
+        #         word_index += 1
+
+        if valid:
+            word_index = 0
+            while word_index < len(n_grams[n_gram_index]):
+                result = crodict_parser.get_stem_word(n_grams[n_gram_index][word_index])
+                if result != "NOT_FOUND":
+                    n_grams[n_gram_index][word_index] = result
+                word_index += 1
+
         if not valid:
-            n_gram_list.pop(n_gram_index)
+            n_grams.pop(n_gram_index)
             continue
         n_gram_index += 1
 
-    f = open("n_grams.txt", "w", encoding="utf-8")
-    for n_gram in n_gram_list:
-        f.write(" ".join(n_gram))
-        f.write("\n")
-    f.close()
-
-    return sentence_list
+    return n_grams
 
 
-def parse_word_list(word_list):
-    index = 0
-    while index < len(word_list):
-        for character in [".", ",", "?", "!", ":", ";", "(", ")", '"', "-", "«", "»"]:
-            split_result = word_list[index].split(character)
-            if len(split_result) > 1:
-                word_list[index] = split_result[0]
-                for word in split_result[1:]:
-                    word_list.append(word)
-
-        if not word_list[index].isalpha():
-            if word_list[index] != "": print(word_list[index])
-            del word_list[index]
-            continue
-
-        word_list[index] = word_list[index].lower()
-
-        if word_list[index] in ["i", "pa", "te", "ni", "niti", "a", "ali", "nego", "već", "no", "na", "o", "po", "pri", "prema", "u", "je", "ostalo", "se", "za", "su", "s", "od", "da", "iz", "sa", "to", "ili", "koji", "kao", "što", "nakon", "do"]:
-            # if word_list[index] != "": print(word_list[index])
-            del word_list[index]
-            continue
-
-        index += 1
 
 
 def get_sorted_dictionary(dictionary):
     return dict(sorted(dictionary.items(), key=lambda item: item[1], reverse=True))
 
 
+def generate_base_vectors():
+    for category in vectors:
+
+        links = []
+        with open("poveznice/" + category + ".txt", "r", encoding="utf-8") as file:
+            for line in file:
+                line = line.strip()
+                if line != "" and line[0] != "/":
+                    links.append(line)
+
+        vectors[category] = get_vector_from_links(links)
+        vectors[category] = get_sorted_dictionary(vectors[category])
+
+        print("GENERATED " + category)
+
+
+
 def get_vector_from_links(links):
-    vector = {}
+    summed_vector = {}
     for link in links:
         try:
             url = requests.get(link)
         except:
+            print("Pogreška - nije moguće dohvatiti web-stranicu.")
             continue
 
-        html_text = url.text
-        sentence_list = get_sentence_list(html_text)
-        # parse_word_list(word_list)
+        vector = get_vector(url.text)
 
-        # for word in word_list:
-        #     if word not in vector:
-        #         vector[word] = 1
-        #     else:
-        #         vector[word] += 1
+        for n_gram in vector:
+            if n_gram not in summed_vector:
+                summed_vector[n_gram] = vector[n_gram]
+            else:
+                summed_vector[n_gram] += vector[n_gram]
 
-    # vector = get_sorted_dictionary(vector)
-    # return vector
+    return summed_vector
 
 
-def calculate_probabilities(sport_vector, kultura_vector, lifestyle_vector, test_vector):
-    hits = {
-        "sport": {"count": 0, "vector": {}},
-        "kultura": {"count": 0, "vector": {}},
-        "lifestyle": {"count": 0, "vector": {}},
-    }
+def get_vector(text):
+    vector = {}
+    n_grams = get_n_grams(text, 1)
+    n_grams = parse_n_grams(n_grams)
 
-    for key in test_vector:
-        if key in sport_vector:
-            hits["sport"]["count"] += min(test_vector[key], sport_vector[key])
-            hits["sport"]["vector"][key] = min(test_vector[key], sport_vector[key])
-        if key in kultura_vector:
-            hits["kultura"]["count"] += min(test_vector[key], kultura_vector[key])
-            hits["kultura"]["vector"][key] = min(test_vector[key], kultura_vector[key])
-        if key in lifestyle_vector:
-            hits["lifestyle"]["count"] += min(test_vector[key], lifestyle_vector[key])
-            hits["lifestyle"]["vector"][key] = min(test_vector[key], lifestyle_vector[key])
+    f = open("temp/n_grams.txt", "w", encoding="utf-8")
+    for n_gram in n_grams:
+        f.write(" ".join(n_gram))
+        f.write("\n")
+    f.close()
 
-    summ = hits["sport"]["count"] + hits["kultura"]["count"] + hits["lifestyle"]["count"]
+    for n_gram in n_grams:
+        n_gram = " ".join(n_gram)
+        if n_gram not in vector:
+            vector[n_gram] = 1
+        else:
+            vector[n_gram] += 1
 
+    return vector
+
+
+
+
+def calculate_probabilities(test_vector):
+    hits = {}
+    for category in vectors:
+        hits[category] = {"count": 0, "vector": {}}
+
+    for n_gram in test_vector:
+        for category in vectors:
+            if n_gram in vectors[category]:
+                hits[category]["count"] += min(test_vector[n_gram], vectors[category][n_gram])
+                hits[category]["vector"][n_gram] = min(test_vector[n_gram], vectors[category][n_gram])
+
+    # Zbroji ukupna preklapanja kategorije
+    category_hits_sum = 0
+    for category in hits:
+        category_hits_sum += hits[category]["count"]
+
+        # Sortiraj vektore unutar kategorije po broju preklapanja
+        hits[category]["vector"] = get_sorted_dictionary(hits[category]["vector"])
+
+    # Sortiraj kategorije po ukupnom broju preklapanja
     hits = dict(sorted(hits.items(), key=lambda item: item[1]["count"], reverse=True))
 
     f = open("result.txt", "w", encoding="utf-8")
     for category in hits:
-        hits[category]["vector"] = dict(sorted(hits[category]["vector"].items(), key=lambda item: item[1], reverse=True))
-        f.write(category + ": " + str(hits[category]["count"] / summ * 100) + " -> " + str(hits[category]["count"]))
+        if category_hits_sum > 0:
+            category_percentage = hits[category]["count"] / category_hits_sum * 100
+        else:
+            category_percentage = 0
+        print("{}: {:.2f}".format(category, category_percentage))
+        f.write("{}: {:.2f} -> {}".format(category, category_percentage, hits[category]["count"]))
         f.write("\n")
         for key in hits[category]["vector"]:
             f.write(key + ": " + str(hits[category]["vector"][key]))
@@ -219,51 +283,52 @@ def calculate_probabilities(sport_vector, kultura_vector, lifestyle_vector, test
         f.write("\n")
     f.close()
 
-sport_links = [
-    "https://sportske.jutarnji.hr/sn/nogomet/hnl/klubovi/osijek/za-osijekov-potop-je-najzasluzniji-neocekivani-junak-odradio-je-sve-zaustavio-miereza-i-zabio-kad-je-trebalo-15335467",
-    # "https://sportske.jutarnji.hr/sn/nogomet/nogomet-mix/video-bomba-hrvata-apsolutni-je-hit-bivsi-vatreni-slabijom-nogom-postigao-jedan-od-najljepsih-golova-u-karijeri-15335460",
-    # "https://sportske.jutarnji.hr/sn/nogomet/hnl/klubovi/hajduk/video-dominantni-hajduk-napunio-mrezu-osijeka-u-derbiju-bijelima-ovako-nesto-nije-uspjelo-sedam-godina-15335421",
-    # "https://sportske.jutarnji.hr/sn/nogomet/hnl/klubovi/istra1961/uzivo-video-ludnica-na-drosini-sijevaju-udarci-pred-vratima-istre-sebicnost-napadaca-drzi-goricu-na-zivotu-15335459",
-    # "https://sportske.jutarnji.hr/sn/nogomet/hnl/klubovi/osijek/nakon-sto-je-hajduk-potopio-osijek-unatoc-pljusku-navijaci-nisu-odlazili-poruka-igracima-bila-je-jasna-15335478",
-    # "https://sportske.jutarnji.hr/sn/nogomet/serie-a/video-spezia-sokirala-milan-za-sestu-pobjedu-sezone-u-borbi-za-opstanak-salernitana-iznenadila-atalantu-15335476",
-    # "https://sportske.jutarnji.hr/sn/nogomet/hnl/druga-hnl/rudes-pregazio-dubravu-i-sa-stilom-potvrdio-povratak-medu-hrvatsku-elitu-pokazali-smo-karakter-15335472",
-    # "https://sportske.jutarnji.hr/sn/tenis/atp-wta-turniri/smjena-na-vrhu-atp-ljestvice-alcaraz-nastavio-sjajnu-pobjednicku-seriju-i-svrgnuo-novaka-dokovica-15335475",
-    # "https://sportske.jutarnji.hr/sn/nogomet/primera/video-vatreni-as-zabio-svoj-peti-ovosezonski-pogodak-zatresao-mrezu-u-maniri-hladnokrvnog-strijelca-15335443",
-    # "https://sportske.jutarnji.hr/sn/nogomet/hnl/klubovi/osijek/tomas-imali-smo-kontrolu-do-gola-resetirat-cemo-se-leko-kada-lako-dobijes-osijek-sve-izgleda-ljepse-15335470",
-]
 
-kultura_links = [
-    "https://www.jutarnji.hr/kultura/film-i-televizija/majcina-prerana-smrt-od-raka-kao-trauma-jedne-knjizevnice-u-novoj-seriji-u-produkciji-reese-witherspoon-15335425",
-    # "https://www.jutarnji.hr/promo/spektakularne-queereeoke-uskoro-u-zagrebu-15333611?utm_source=upscore_box",
-    # "https://www.jutarnji.hr/promo/jeste-li-sreli-prolaznike-zagreba-u-joga-pozama-ovih-dana-znate-li-o-kakvom-je-izazovu-rijec-15333504?utm_source=upscore_box",
-    # "https://www.jutarnji.hr/kultura/art/pogledajte-atmosferu-na-jabukovcu-gdje-ove-subote-mladi-umjetnici-prodaju-svoja-djela-15335413",
-    # "https://www.jutarnji.hr/kultura/glazba/donny-mccaslin-u-zagrebu-vec-od-prve-skladbe-bilo-je-jasno-da-je-mocan-i-povremeno-furiozan-saksofonist-15335324",
-    # "https://www.jutarnji.hr/kultura/art/u-mesnickoj-je-sinoc-bio-usporen-promet-necete-vjerovati-koji-je-razlog-15335265",
-    # "https://www.jutarnji.hr/kultura/glazba/bili-smo-na-probi-uoci-finala-prlja-pjeva-poput-ptice-bend-zvuci-i-izgleda-mocno-a-kraj-je-posebno-upecatljiv-15335173",
-    # "https://www.jutarnji.hr/kultura/film-i-televizija/sljedeci-tjedan-rezerviran-je-za-32-dane-hrvatskog-filma-donosimo-detalje-bogatog-rasporeda-15335132",
-    # "https://www.jutarnji.hr/kultura/glazba/prihod-koncerta-ane-rucner-i-kolega-usmjeren-je-na-potporu-obrazovanju-mladih-bez-adekvatne-roditeljske-skrbi-15335110",
-    # "https://www.jutarnji.hr/promo/ministarstvo-je-odvojilo-530-tisuca-eura-za-sufinanciranje-solarnih-uredaja-za-zastitu-zemlje-i-uroda-evo-kako-do-njih-15333981",
-]
+generate_base_vectors()
 
-lifestyle_links = [
-    # "https://www.jutarnji.hr/life/zdravlje/nas-trgovacki-lanac-zbog-bakterije-povukao-proizvod-kupac-ga-htio-vratiti-ali-je-dobio-kosaricu-15335405",
-    "https://www.jutarnji.hr/promo/sveobuhvatna-rekonstrukcija-ekstremiteta-kod-ortopedskih-karcinoma-15332401?utm_source=upscore_box",
-    # "https://www.jutarnji.hr/promo/okusaj-izdrzljivost-i-pomakni-svoje-granice-na-najvecoj-svjetskoj-utrci-s-preprekama-15333478?utm_source=upscore_box",
-    # "https://www.jutarnji.hr/promo/jeste-li-sreli-prolaznike-zagreba-u-joga-pozama-ovih-dana-znate-li-o-kakvom-je-izazovu-rijec-15333504?utm_source=upscore_box",
-    # "https://www.jutarnji.hr/life/zivotne-price/rekla-je-da-i-par-sekundi-poslije-postala-zrtva-pijane-vozacice-nisam-ucinila-nista-lose-hocu-doma-15335332",
-    # "https://www.jutarnji.hr/domidizajn/nekretnine/prodaje-se-zgrada-na-zagrebackom-ribnjaku-za-3-5-milijuna-eura-15335136",
-    # "https://www.jutarnji.hr/life/zivotne-price/finska-bruji-o-raspadu-braka-sanne-marin-za-sve-je-kriva-fatalna-indijka-procurile-i-fotke-15335349",
-    # "https://www.jutarnji.hr/life/zdravlje/nije-prestajala-kasljati-doktor-joj-prepisao-antibiotik-nakon-par-mjeseci-shvatila-je-o-kakvoj-se-pogresci-radi-15335250",
-    # "https://www.jutarnji.hr/life/tehnologija/nova-era-na-pomolu-musk-objavio-tko-dolazi-na-mjesto-glavnog-izvrsnog-direktora-twittera-15335222",
-    # "https://www.jutarnji.hr/life/tehnologija/facebook-spijuni-oprez-drustvena-mreza-korisnicima-koje-promatrate-salje-zahtjeve-za-prijateljstvima-15335197",
-]
+while True:
+    print("Unesi 'tekst' za klasifikaciju ručno unesenog teksta.")
+    print("Unesi 'poveznica' za klasifikaciju teksta preuzetog s web-stranice.")
+    print("Unesi 'kraj' za zatvaranje programa.")
 
-# sport_vector = get_vector_from_links(sport_links)
-# kultura_vector = get_vector_from_links(kultura_links)
-lifestyle_vector = get_vector_from_links(lifestyle_links)
+    user = input(": ").lower().strip()
 
-# print(sport_vector)
+    if user == "kraj":
+        break
 
-# test_vector = get_vector_from_links(["https://hr.wikipedia.org/wiki/Luka_Modri%C4%87"])
+    elif user == "tekst":
+        print("Unesi tekst. Ostavi prazno za povratak.")
+        user_text = input(": ")
 
-# calculate_probabilities(sport_vector, kultura_vector, lifestyle_vector, test_vector)
+        if user_text == "":
+            continue
+
+        vector = get_vector(user_text)
+        print(vector)
+        calculate_probabilities(vector)
+
+    elif user == "poveznica":
+        print("Unesi poveznicu. Ostavi prazno za povratak.")
+        user_link = input(": ")
+
+        vector = get_vector_from_links([user_link])
+        print(vector)
+        calculate_probabilities(vector)
+
+
+# tekst = "Marko je išao igrati nogomet. Išao je i David."
+
+# vektor = {'marko': 1, 'je': 2, 'išao': 2, 'igrati': 1, 'nogomet': 1, 'i': 1, 'david': 1}
+
+# tekst = tekst.replace(".", "")
+# tekst = tekst.lower()
+# tekst = tekst.split(" ")
+
+# dictionary = {}
+# for word in tekst:
+#     if word not in dictionary:
+#         dictionary[word] = 1
+#     else:
+#         dictionary[word] += 1
+
+# print(dictionary)

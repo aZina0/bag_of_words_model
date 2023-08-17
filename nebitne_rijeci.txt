@@ -20,6 +20,7 @@ mi
 vi
 oni
 
+/POMOĆNI GLAGOL BITI
 sam
 si
 je
@@ -33,11 +34,20 @@ jesmo
 jeste
 jesu
 
+/FUTUR 1.
 ću
 ćeš
 će
 ćemo
 ćete
+
+FUTUR II.
+budem
+budeš
+bude
+budemo
+budete
+budu
 
 bi
 bismo
