@@ -2,21 +2,25 @@ import requests
 import json
 
 
-absent_words = []
-with open("crodict/nepronadene_rijeci.txt", "r", encoding="utf-8") as absent_words_file:
-    for line in absent_words_file:
-        absent_words.append(line.strip())
+try:
+    with open("crodict/nepronadene_rijeci.txt", "r", encoding="utf-8") as absent_words_file:
+        absent_words = []
+        for line in absent_words_file:
+            absent_words.append(line.strip())
+except:
+    absent_words = []
 
+try:
+    with open("crodict/rjecnik.txt", "r", encoding="utf-8") as dictionary_file:
+        word_dictionary = json.load(dictionary_file)
+except:
+    word_dictionary = {}
 
-with open("crodict/rjecnik.txt", "r", encoding="utf-8") as dictionary_file:
-    word_dictionary = json.load(dictionary_file)
-
-
-def get_stem_word(word):
+def get_stem_word(word, request = False):
     if word in word_dictionary:
         return word_dictionary[word]
 
-    if word in absent_words:
+    if word in absent_words or not request:
         return "NOT_FOUND"
 
     for word_type in ["imenice", "glagoli"]:

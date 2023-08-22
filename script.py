@@ -1,66 +1,84 @@
 import requests
+import json
 import stemming
 import crodict_parser
+import casopis_parsers
 
 vectors = {
-    "politika": {},
-    "gospodarstvo": {},
-    "sport": {},
-    "glazba": {},
     "filmovi_serije": {},
+    "glazba": {},
+    "gospodarstvo": {},
+    "politika": {},
+    "sport": {},
     "tehnologija": {},
 }
 
 
-invalid_words = []
-with open("nebitne_rijeci.txt", "r", encoding="utf-8") as file:
-    for line in file:
-        line = line.strip()
-        if line != "" and line[0] != "/":
-            invalid_words.append(line)
+try:
+    with open("parsed_links.txt", "r", encoding="utf-8") as parsed_links_file:
+        parsed_links = json.load(parsed_links_file)
+except:
+    parsed_links = {}
+
+
+try:
+    with open("nebitne_rijeci.txt", "r", encoding="utf-8") as file:
+        invalid_words = []
+        for line in file:
+            line = line.strip()
+            if line != "" and line[0] != "/":
+                invalid_words.append(line)
+except:
+    invalid_words = []
 
 
 
-def get_n_grams(html_text, n):
-    f = open("temp/html.txt", "w", encoding="utf-8")
-    f.write(html_text)
-    f.close()
+
+def get_simple_sentences(html_text):
+    # f = open("temp/html.txt", "w", encoding="utf-8")
+    # f.write(html_text)
+    # f.close()
 
     while html_text.find("<!--") >= 0 and html_text.find("-->") >= 0:
         start_index = html_text.find("<!--")
         end_index = html_text.find("-->") + len("-->")
-        html_text = html_text[0:start_index] + "\n" + html_text[end_index:-1]
+        html_text = html_text[:start_index] + "\n" + html_text[end_index:]
 
     if html_text.find("<head>") >= 0:
         start_index = html_text.find("<head>")
         end_index = html_text.find("</head>") + len("</head>")
-        html_text = html_text[0:start_index] + "\n" + html_text[end_index:-1]
+        html_text = html_text[:start_index] + "\n" + html_text[end_index:]
 
     while html_text.find("<script") >= 0 and html_text.find("</script>") >= 0:
         start_index = html_text.find("<script")
         end_index = html_text.find("</script>") + len("</script>")
-        html_text = html_text[0:start_index] + "\n" + html_text[end_index:-1]
+        html_text = html_text[:start_index] + "\n" + html_text[end_index:]
 
     while html_text.find("<style") >= 0 and html_text.find("</style>") >= 0:
         start_index = html_text.find("<style")
         end_index = html_text.find("</style>") + len("</style>")
-        html_text = html_text[0:start_index] + "\n" + html_text[end_index:-1]
+        html_text = html_text[:start_index] + "\n" + html_text[end_index:]
 
-    for tag in ["a", "span", "b", "i", "sup", "strong"]:
+    for tag in ["iframe", "strong", "span", "sup", "a", "b", "i"]:
         while html_text.find("<" + tag) >= 0 and html_text.find("</" + tag + ">") >= 0:
             tag_open_start = html_text.find("<" + tag)
             tag_open_end = html_text.find(">", tag_open_start) + len(">")
-            html_text = html_text[0:tag_open_start] + html_text[tag_open_end:-1]
+            # print("============")
+            # print(tag)
+            # print(html_text)
+            # print(html_text[tag_open_start:tag_open_end])
+            html_text = html_text[:tag_open_start] + html_text[tag_open_end:]
 
             tag_close_start = html_text.find("</" + tag + ">")
             if tag_close_start >= 0:
                 tag_close_end = tag_close_start + len("</" + tag + ">")
-                html_text = html_text[0:tag_close_start] + " " + html_text[tag_close_end:-1]
+                # print(html_text[tag_close_start:tag_close_end])
+                html_text = html_text[:tag_close_start] + " " + html_text[tag_close_end:]
 
     while html_text.find("<") >= 0 and html_text.find(">") >= 0:
         start_index = html_text.find("<")
         end_index = html_text.find(">") + len(">")
-        html_text = html_text[0:start_index] + "\n" + html_text[end_index:-1]
+        html_text = html_text[:start_index] + "\n" + html_text[end_index:]
 
     html_text = html_text.replace("&#8194;", " ")
     html_text = html_text.replace("&#8211;", "-")
@@ -69,9 +87,23 @@ def get_n_grams(html_text, n):
     html_text = html_text.replace("&#8217;", '"')
     html_text = html_text.replace("&#8220;", '"')
     html_text = html_text.replace("&#8221;", '"')
+    html_text = html_text.replace("&#8221;", '"')
     html_text = html_text.replace("&#91;", " ")
     html_text = html_text.replace("&#93;", "")
     html_text = html_text.replace("&nbsp;", " ")
+    html_text = html_text.replace("\u00a0", " ")
+    html_text = html_text.replace("\u200b", "")
+    html_text = html_text.replace("\u201c", "")
+    html_text = html_text.replace("\u201d", "")
+    html_text = html_text.replace("\u201e", "")
+    html_text = html_text.replace("\u00bb", "")
+    html_text = html_text.replace("\u00ab", "")
+    html_text = html_text.replace("\u2018", "")
+    html_text = html_text.replace("\u2019", "")
+    html_text = html_text.replace("\u2013", "-")
+    html_text = html_text.replace("\u2026", ".")
+    html_text = html_text.replace("\"", "")
+    html_text = html_text.replace("'", "")
 
     sentence_list = html_text.split("\n")
     sentence_index = 0
@@ -83,11 +115,11 @@ def get_n_grams(html_text, n):
 
         sentence_index += 1
 
-    f = open("temp/raw_sentences.txt", "w", encoding="utf-8")
-    for sentence in sentence_list:
-        f.write(sentence)
-        f.write("\n")
-    f.close()
+    # f = open("temp/raw_sentences.txt", "w", encoding="utf-8")
+    # for sentence in sentence_list:
+    #     f.write(sentence)
+    #     f.write("\n")
+    # f.close()
 
     sentence_index = 0
     while sentence_index < len(sentence_list):
@@ -119,28 +151,19 @@ def get_n_grams(html_text, n):
     for sentence_index in range(len(sentence_list)):
         sentence_list[sentence_index] = sentence_list[sentence_index].lower()
 
-
-    n_grams = []
-
     sentence_index = 0
     while sentence_index < len(sentence_list):
-        sentence_list[sentence_index] = sentence_list[sentence_index].split()
-        sentence_index += 1
-
-    sentence_index = 0
-    while sentence_index < len(sentence_list):
-        word_index = 0
-        while word_index + n <= len(sentence_list[sentence_index]):
-            n_grams.append(sentence_list[sentence_index][word_index:word_index+n])
-            word_index += 1
+        if sentence_list[sentence_index].strip() == "":
+            sentence_list.pop(sentence_index)
+            continue
 
         sentence_index += 1
 
-    return n_grams
+    return sentence_list
 
 
 
-def parse_n_grams(n_grams):
+def parse_n_grams(n_grams, base_vector = False):
     n_gram_index = 0
     while n_gram_index < len(n_grams):
         valid = True
@@ -167,10 +190,17 @@ def parse_n_grams(n_grams):
         if valid:
             word_index = 0
             while word_index < len(n_grams[n_gram_index]):
-                result = crodict_parser.get_stem_word(n_grams[n_gram_index][word_index])
+                result = crodict_parser.get_stem_word(n_grams[n_gram_index][word_index], request=base_vector)
                 if result != "NOT_FOUND":
                     n_grams[n_gram_index][word_index] = result
                 word_index += 1
+
+        if valid:
+            # Izbaci sve n_torke koje sadrže riječi koje se smatraju kao neznačajne (veznici, čestice...)
+            for word in n_grams[n_gram_index]:
+                if word in invalid_words:
+                    valid = False
+                    break
 
         if not valid:
             n_grams.pop(n_gram_index)
@@ -196,23 +226,48 @@ def generate_base_vectors():
                 if line != "" and line[0] != "/":
                     links.append(line)
 
-        vectors[category] = get_vector_from_links(links)
+        vectors[category] = get_vector_from_links(links, 1, base_vector=True)
         vectors[category] = get_sorted_dictionary(vectors[category])
 
         print("GENERATED " + category)
 
 
 
-def get_vector_from_links(links):
+def get_vector_from_links(links, n, base_vector = False):
     summed_vector = {}
     for link in links:
-        try:
-            url = requests.get(link)
-        except:
-            print("Pogreška - nije moguće dohvatiti web-stranicu.")
-            continue
+        # Obradi tekst iz poveznica ili samo ugrabi ako je tekst vec obraden
+        if link in parsed_links:
+            simple_sentences = parsed_links[link][:]
+        else:
+            parser_failed = True
+            if link.startswith("https://www.24sata.hr"):
+                text = casopis_parsers.get_document_content_from_24sata(link)
+                if text != "NOTHING":
+                    parser_failed = False
+            elif link.startswith("https://www.novilist.hr"):
+                text = casopis_parsers.get_document_content_from_novilist(link)
+                if text != "NOTHING":
+                    parser_failed = False
 
-        vector = get_vector(url.text)
+            if parser_failed:
+                try:
+                    text = requests.get(link).text
+                except:
+                    print("Pogreška - nije moguće dohvatiti web-stranicu.")
+                    continue
+
+            
+
+            simple_sentences = get_simple_sentences(text)
+            parsed_links[link] = simple_sentences[:]
+            # if link == "https://www.novilist.hr/mozaik/glazba/nakon-kino-blagajni-barbie-rusi-rekorde-i-na-glazbenim-top-ljestvicama/?meta_refresh=true":
+            #     print(text)
+            #     print(simple_sentences)
+            with open("parsed_links.txt", "w", encoding="utf-8") as parsed_links_file:
+                json.dump(parsed_links, parsed_links_file, indent=1)
+
+        vector = get_vector_from_simple_sentences(simple_sentences, n, base_vector, link)
 
         for n_gram in vector:
             if n_gram not in summed_vector:
@@ -223,17 +278,32 @@ def get_vector_from_links(links):
     return summed_vector
 
 
-def get_vector(text):
+def get_vector_from_simple_sentences(simple_sentences, n, base_vector = False, link = None):
+    # Razdvoji riječi u stringu u listu riječi
+    sentence_index = 0
+    while sentence_index < len(simple_sentences):
+        simple_sentences[sentence_index] = simple_sentences[sentence_index].split()
+        sentence_index += 1
+
+    n_grams = []
+    sentence_index = 0
+    while sentence_index < len(simple_sentences):
+        word_index = 0
+        while word_index + n <= len(simple_sentences[sentence_index]):
+            n_grams.append(simple_sentences[sentence_index][word_index:word_index+n])
+            word_index += 1
+
+        sentence_index += 1
+
+    n_grams = parse_n_grams(n_grams, base_vector)
+
+    # f = open("temp/n_grams.txt", "w", encoding="utf-8")
+    # for n_gram in n_grams:
+    #     f.write(" ".join(n_gram))
+    #     f.write("\n")
+    # f.close()
+
     vector = {}
-    n_grams = get_n_grams(text, 1)
-    n_grams = parse_n_grams(n_grams)
-
-    f = open("temp/n_grams.txt", "w", encoding="utf-8")
-    for n_gram in n_grams:
-        f.write(" ".join(n_gram))
-        f.write("\n")
-    f.close()
-
     for n_gram in n_grams:
         n_gram = " ".join(n_gram)
         if n_gram not in vector:
@@ -284,7 +354,13 @@ def calculate_probabilities(test_vector):
     f.close()
 
 
+# parsed = casopis_parsers.get_document_content_from_novilist("https://www.novilist.hr/mozaik/glazba/nakon-kino-blagajni-barbie-rusi-rekorde-i-na-glazbenim-top-ljestvicama/?meta_refresh=true")
+# print(parsed)
+# print(get_simple_sentences(parsed))
+
+
 generate_base_vectors()
+# print(vectors["politika"])
 
 while True:
     print("Unesi 'tekst' za klasifikaciju ručno unesenog teksta.")
@@ -303,7 +379,8 @@ while True:
         if user_text == "":
             continue
 
-        vector = get_vector(user_text)
+        simple_sentences = get_simple_sentences(user_text)
+        vector = get_vector_from_simple_sentences(simple_sentences, 1)
         print(vector)
         calculate_probabilities(vector)
 
@@ -311,7 +388,7 @@ while True:
         print("Unesi poveznicu. Ostavi prazno za povratak.")
         user_link = input(": ")
 
-        vector = get_vector_from_links([user_link])
+        vector = get_vector_from_links([user_link], 1)
         print(vector)
         calculate_probabilities(vector)
 
