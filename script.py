@@ -2,7 +2,7 @@ import requests
 import json
 import stemming
 import crodict_parser
-import casopis_parsers
+import content_extractor
 
 vectors = {
     "filmovi_serije": {},
@@ -35,10 +35,6 @@ except:
 
 
 def get_simple_sentences(html_text):
-    # f = open("temp/html.txt", "w", encoding="utf-8")
-    # f.write(html_text)
-    # f.close()
-
     while html_text.find("<!--") >= 0 and html_text.find("-->") >= 0:
         start_index = html_text.find("<!--")
         end_index = html_text.find("-->") + len("-->")
@@ -63,16 +59,11 @@ def get_simple_sentences(html_text):
         while html_text.find("<" + tag) >= 0 and html_text.find("</" + tag + ">") >= 0:
             tag_open_start = html_text.find("<" + tag)
             tag_open_end = html_text.find(">", tag_open_start) + len(">")
-            # print("============")
-            # print(tag)
-            # print(html_text)
-            # print(html_text[tag_open_start:tag_open_end])
             html_text = html_text[:tag_open_start] + html_text[tag_open_end:]
 
             tag_close_start = html_text.find("</" + tag + ">")
             if tag_close_start >= 0:
                 tag_close_end = tag_close_start + len("</" + tag + ">")
-                # print(html_text[tag_close_start:tag_close_end])
                 html_text = html_text[:tag_close_start] + " " + html_text[tag_close_end:]
 
     while html_text.find("<") >= 0 and html_text.find(">") >= 0:
@@ -114,12 +105,6 @@ def get_simple_sentences(html_text):
             continue
 
         sentence_index += 1
-
-    # f = open("temp/raw_sentences.txt", "w", encoding="utf-8")
-    # for sentence in sentence_list:
-    #     f.write(sentence)
-    #     f.write("\n")
-    # f.close()
 
     sentence_index = 0
     while sentence_index < len(sentence_list):
@@ -174,12 +159,12 @@ def parse_n_grams(n_grams, base_vector = False):
                 valid = False
                 break
 
-        if valid:
-            # Izbaci sve n_torke koje sadrže riječi koje se smatraju kao neznačajne (veznici, čestice...)
-            for word in n_grams[n_gram_index]:
-                if word in invalid_words:
-                    valid = False
-                    break
+        # if valid:
+        #     # Izbaci sve n_torke koje sadrže riječi koje se smatraju kao neznačajne (veznici, čestice...)
+        #     for word in n_grams[n_gram_index]:
+        #         if word in invalid_words:
+        #             valid = False
+        #             break
 
         # if valid:
         #     word_index = 0
@@ -195,12 +180,12 @@ def parse_n_grams(n_grams, base_vector = False):
                     n_grams[n_gram_index][word_index] = result
                 word_index += 1
 
-        if valid:
-            # Izbaci sve n_torke koje sadrže riječi koje se smatraju kao neznačajne (veznici, čestice...)
-            for word in n_grams[n_gram_index]:
-                if word in invalid_words:
-                    valid = False
-                    break
+        # if valid:
+        #     # Izbaci sve n_torke koje sadrže riječi koje se smatraju kao neznačajne (veznici, čestice...)
+        #     for word in n_grams[n_gram_index]:
+        #         if word in invalid_words:
+        #             valid = False
+        #             break
 
         if not valid:
             n_grams.pop(n_gram_index)
@@ -216,7 +201,7 @@ def get_sorted_dictionary(dictionary):
     return dict(sorted(dictionary.items(), key=lambda item: item[1], reverse=True))
 
 
-def generate_base_vectors():
+def generate_base_vectors(n):
     for category in vectors:
 
         links = []
@@ -226,7 +211,7 @@ def generate_base_vectors():
                 if line != "" and line[0] != "/":
                     links.append(line)
 
-        vectors[category] = get_vector_from_links(links, 1, base_vector=True)
+        vectors[category] = get_vector_from_links(links, n, base_vector=True)
         vectors[category] = get_sorted_dictionary(vectors[category])
 
         print("GENERATED " + category)
@@ -240,32 +225,23 @@ def get_vector_from_links(links, n, base_vector = False):
         if link in parsed_links:
             simple_sentences = parsed_links[link][:]
         else:
-            parser_failed = True
-            if link.startswith("https://www.24sata.hr"):
-                text = casopis_parsers.get_document_content_from_24sata(link)
-                if text != "NOTHING":
-                    parser_failed = False
-            elif link.startswith("https://www.novilist.hr"):
-                text = casopis_parsers.get_document_content_from_novilist(link)
-                if text != "NOTHING":
-                    parser_failed = False
-
-            if parser_failed:
+            text = content_extractor.get_document_content(link)
+            if text == "NOTHING":
                 try:
                     text = requests.get(link).text
                 except:
                     print("Pogreška - nije moguće dohvatiti web-stranicu.")
                     continue
 
-            
-
             simple_sentences = get_simple_sentences(text)
-            parsed_links[link] = simple_sentences[:]
-            # if link == "https://www.novilist.hr/mozaik/glazba/nakon-kino-blagajni-barbie-rusi-rekorde-i-na-glazbenim-top-ljestvicama/?meta_refresh=true":
-            #     print(text)
-            #     print(simple_sentences)
-            with open("parsed_links.txt", "w", encoding="utf-8") as parsed_links_file:
-                json.dump(parsed_links, parsed_links_file, indent=1)
+
+            if base_vector:
+                parsed_links[link] = simple_sentences[:]
+                with open("parsed_links.txt", "w", encoding="utf-8") as parsed_links_file:
+                    json.dump(parsed_links, parsed_links_file, indent=1)
+            else:
+                print(text)
+                print(simple_sentences)
 
         vector = get_vector_from_simple_sentences(simple_sentences, n, base_vector, link)
 
@@ -296,12 +272,6 @@ def get_vector_from_simple_sentences(simple_sentences, n, base_vector = False, l
         sentence_index += 1
 
     n_grams = parse_n_grams(n_grams, base_vector)
-
-    # f = open("temp/n_grams.txt", "w", encoding="utf-8")
-    # for n_gram in n_grams:
-    #     f.write(" ".join(n_gram))
-    #     f.write("\n")
-    # f.close()
 
     vector = {}
     for n_gram in n_grams:
@@ -354,13 +324,8 @@ def calculate_probabilities(test_vector):
     f.close()
 
 
-# parsed = casopis_parsers.get_document_content_from_novilist("https://www.novilist.hr/mozaik/glazba/nakon-kino-blagajni-barbie-rusi-rekorde-i-na-glazbenim-top-ljestvicama/?meta_refresh=true")
-# print(parsed)
-# print(get_simple_sentences(parsed))
 
-
-generate_base_vectors()
-# print(vectors["politika"])
+generate_base_vectors(1)
 
 while True:
     print("Unesi 'tekst' za klasifikaciju ručno unesenog teksta.")
@@ -381,7 +346,6 @@ while True:
 
         simple_sentences = get_simple_sentences(user_text)
         vector = get_vector_from_simple_sentences(simple_sentences, 1)
-        print(vector)
         calculate_probabilities(vector)
 
     elif user == "poveznica":
@@ -389,8 +353,9 @@ while True:
         user_link = input(": ")
 
         vector = get_vector_from_links([user_link], 1)
-        print(vector)
         calculate_probabilities(vector)
+
+
 
 
 # tekst = "Marko je išao igrati nogomet. Išao je i David."
