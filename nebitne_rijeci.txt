@@ -209,3 +209,4 @@ jer
 samo
 još
 tako
+ovo

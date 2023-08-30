@@ -3,8 +3,20 @@ import json
 import stemming
 import crodict_parser
 import content_extractor
+import math
+import win32clipboard
+import time
 
-vectors = {
+settings = {
+    "N": 1,
+    "remove_invalid_words": False,
+    "prefix_suffix_removal": False,
+    "crodict_database": False,
+    "calculation_type": "count",
+}
+
+
+category_vectors = {
     "filmovi_serije": {},
     "glazba": {},
     "gospodarstvo": {},
@@ -78,7 +90,6 @@ def get_simple_sentences(html_text):
     html_text = html_text.replace("&#8217;", '"')
     html_text = html_text.replace("&#8220;", '"')
     html_text = html_text.replace("&#8221;", '"')
-    html_text = html_text.replace("&#8221;", '"')
     html_text = html_text.replace("&#91;", " ")
     html_text = html_text.replace("&#93;", "")
     html_text = html_text.replace("&nbsp;", " ")
@@ -151,41 +162,49 @@ def get_simple_sentences(html_text):
 def parse_n_grams(n_grams, base_vector = False):
     n_gram_index = 0
     while n_gram_index < len(n_grams):
+        n_gram = n_grams[n_gram_index]
+
         valid = True
 
-        # Izbaci sve n_torke koje sadrže riječi koje se ne sastoje od znakova abecede
-        for word in n_grams[n_gram_index]:
+        # Preskoči sve n_torke koje sadrže riječi koje se ne sastoje od znakova abecede
+        for word in n_gram:
             if not word.isalpha():
                 valid = False
                 break
 
-        # if valid:
-        #     # Izbaci sve n_torke koje sadrže riječi koje se smatraju kao neznačajne (veznici, čestice...)
-        #     for word in n_grams[n_gram_index]:
-        #         if word in invalid_words:
-        #             valid = False
-        #             break
-
-        # if valid:
-        #     word_index = 0
-        #     while word_index < len(n_grams[n_gram_index]):
-        #         n_grams[n_gram_index][word_index] = stemming.process_word(n_grams[n_gram_index][word_index])
-        #         word_index += 1
+        if valid:
+            if settings["remove_invalid_words"]:
+                # Preskoči n-torku ako sadrži riječ koja
+                # se smatra kao nebitna (veznici, čestice...)
+                for word in n_gram:
+                    if word in invalid_words:
+                        valid = False
+                        break
 
         if valid:
-            word_index = 0
-            while word_index < len(n_grams[n_gram_index]):
-                result = crodict_parser.get_stem_word(n_grams[n_gram_index][word_index], request=base_vector)
-                if result != "NOT_FOUND":
-                    n_grams[n_gram_index][word_index] = result
-                word_index += 1
+            if settings["prefix_suffix_removal"]:
+                word_index = 0
+                while word_index < len(n_grams[n_gram_index]):
+                    n_grams[n_gram_index][word_index] = stemming.process_word(n_grams[n_gram_index][word_index])
+                    word_index += 1
 
-        # if valid:
-        #     # Izbaci sve n_torke koje sadrže riječi koje se smatraju kao neznačajne (veznici, čestice...)
-        #     for word in n_grams[n_gram_index]:
-        #         if word in invalid_words:
-        #             valid = False
-        #             break
+        if valid:
+            if settings["crodict_database"]:
+                word_index = 0
+                while word_index < len(n_grams[n_gram_index]):
+                    result = crodict_parser.get_stem_word(n_grams[n_gram_index][word_index], request=base_vector)
+                    if result != "NOT_FOUND":
+                        n_grams[n_gram_index][word_index] = result
+                    word_index += 1
+
+        if valid:
+            if settings["remove_invalid_words"]:
+                # Izbaci sve n-torke koje sadrže riječi koje
+                # se smatraju kao nebitne (veznici, čestice...)
+                for word in n_grams[n_gram_index]:
+                    if word in invalid_words:
+                        valid = False
+                        break
 
         if not valid:
             n_grams.pop(n_gram_index)
@@ -201,8 +220,8 @@ def get_sorted_dictionary(dictionary):
     return dict(sorted(dictionary.items(), key=lambda item: item[1], reverse=True))
 
 
-def generate_base_vectors(n):
-    for category in vectors:
+def generate_base_category_vectors():
+    for category in category_vectors:
 
         links = []
         with open("poveznice/" + category + ".txt", "r", encoding="utf-8") as file:
@@ -211,14 +230,15 @@ def generate_base_vectors(n):
                 if line != "" and line[0] != "/":
                     links.append(line)
 
-        vectors[category] = get_vector_from_links(links, n, base_vector=True)
-        vectors[category] = get_sorted_dictionary(vectors[category])
+        category_vectors[category]["separate"], category_vectors[category]["summed"] = get_vectors_from_links(links, base_vector=True)
+        category_vectors[category]["summed"] = get_sorted_dictionary(category_vectors[category]["summed"])
 
-        print("GENERATED " + category)
+        # print("GENERATED " + category)
 
 
 
-def get_vector_from_links(links, n, base_vector = False):
+def get_vectors_from_links(links, base_vector = False):
+    vectors = {}
     summed_vector = {}
     for link in links:
         # Obradi tekst iz poveznica ili samo ugrabi ako je tekst vec obraden
@@ -239,22 +259,82 @@ def get_vector_from_links(links, n, base_vector = False):
                 parsed_links[link] = simple_sentences[:]
                 with open("parsed_links.txt", "w", encoding="utf-8") as parsed_links_file:
                     json.dump(parsed_links, parsed_links_file, indent=1)
-            else:
-                print(text)
-                print(simple_sentences)
 
-        vector = get_vector_from_simple_sentences(simple_sentences, n, base_vector, link)
+        vectors[link] = get_vector_from_simple_sentences(simple_sentences, base_vector, link)
+        vectors[link] = get_sorted_dictionary(vectors[link])
 
-        for n_gram in vector:
+        for n_gram in vectors[link]:
             if n_gram not in summed_vector:
-                summed_vector[n_gram] = vector[n_gram]
+                summed_vector[n_gram] = vectors[link][n_gram]
             else:
-                summed_vector[n_gram] += vector[n_gram]
+                summed_vector[n_gram] += vectors[link][n_gram]
 
-    return summed_vector
+    if base_vector:
+        return vectors, summed_vector
+    else:
+        return summed_vector
+
+    # tf = {}
+    # for link in links:
+    #     tf[link] = {}
+    #     total_count_of_n_grams = 0
+    #     for n_gram in category_vectors[link]:
+    #         total_count_of_n_grams += category_vectors[link][n_gram]
+
+    #     for n_gram in category_vectors[link]:
+    #         tf[link][n_gram] = category_vectors[link][n_gram] / total_count_of_n_grams
+
+    #     tf[link] = get_sorted_dictionary(tf[link])
+
+    # idf = {}
+    # for n_gram in summed_vector:
+    #     number_of_links_where_it_appears = 0
+
+    #     for link in links:
+    #         if n_gram in category_vectors[link]:
+    #             number_of_links_where_it_appears += 1
+
+    #     idf[n_gram] = 20 / number_of_links_where_it_appears
+
+    # idf = get_sorted_dictionary(idf)
+
+    # with open("temp/tf.txt", "w", encoding="utf-8") as file:
+    #     json.dump(tf, file, indent=1)
+
+    # with open("temp/idf.txt", "w", encoding="utf-8") as file:
+    #     json.dump(idf, file, indent=1)
+
+    # tfidf = {}
+    # for link in links:
+    #     tfidf[link] = {}
+
+    #     for n_gram in category_vectors[link]:
+    #         tfidf[link][n_gram] = tf[link][n_gram] * idf[n_gram]
+
+    #     tfidf[link] = get_sorted_dictionary(tfidf[link])
+
+    # with open("temp/tfidf.txt", "w", encoding="utf-8") as file:
+    #     json.dump(tfidf, file, indent=1)
+
+    # summ = {}
+    # for n_gram in summed_vector:
+    #     tfidfs = [0.0]
+
+    #     for link in links:
+    #         if n_gram in tfidf[link]:
+    #             tfidfs.append(tfidf[link][n_gram])
+
+    #     summ[n_gram] = max(tfidfs)
+
+    # summ = get_sorted_dictionary(summ)
+
+    # with open("temp/summ.txt", "w", encoding="utf-8") as file:
+    #     json.dump(summ, file, indent=1)
+
+    # return summed_vector
 
 
-def get_vector_from_simple_sentences(simple_sentences, n, base_vector = False, link = None):
+def get_vector_from_simple_sentences(simple_sentences, base_vector = False, link = None):
     # Razdvoji riječi u stringu u listu riječi
     sentence_index = 0
     while sentence_index < len(simple_sentences):
@@ -265,8 +345,8 @@ def get_vector_from_simple_sentences(simple_sentences, n, base_vector = False, l
     sentence_index = 0
     while sentence_index < len(simple_sentences):
         word_index = 0
-        while word_index + n <= len(simple_sentences[sentence_index]):
-            n_grams.append(simple_sentences[sentence_index][word_index:word_index+n])
+        while word_index + settings["N"] <= len(simple_sentences[sentence_index]):
+            n_grams.append(simple_sentences[sentence_index][word_index:word_index + settings["N"]])
             word_index += 1
 
         sentence_index += 1
@@ -285,17 +365,56 @@ def get_vector_from_simple_sentences(simple_sentences, n, base_vector = False, l
 
 
 
-
-def calculate_probabilities(test_vector):
+def get_probabilities_using_binary(test_vector, sort = True):
     hits = {}
-    for category in vectors:
+    for category in category_vectors:
+        hits[category] = {"count": 0, "n_grams": []}
+
+    for n_gram in test_vector:
+        for category in category_vectors:
+            if n_gram in category_vectors[category]["summed"]:
+                hits[category]["count"] += 1
+                hits[category]["n_grams"].append(n_gram)
+
+    # Zbroji ukupna preklapanja kategorije
+    category_hits_sum = 0
+    for category in hits:
+        category_hits_sum += hits[category]["count"]
+
+    # Sortiraj kategorije po ukupnom broju preklapanja
+    if sort:
+        hits = dict(sorted(hits.items(), key=lambda item: item[1]["count"], reverse=True))
+
+    result = {}
+    with open("rezultat.txt", "w", encoding="utf-8") as file:
+        for category in hits:
+            if category_hits_sum > 0:
+                category_percentage = hits[category]["count"] / category_hits_sum * 100
+            else:
+                category_percentage = 0
+
+            result[category] = category_percentage
+
+            file.write("{}: {:.2f}% -> {}/{}\n".format(category.upper(), category_percentage, hits[category]["count"], category_hits_sum))
+            file.write("")
+            for n_gram in hits[category]["n_grams"]:
+                file.write("'" + n_gram + "'")
+                file.write("\n")
+            file.write("\n")
+
+    return result
+
+
+def get_probabilities_using_count(test_vector, sort = True):
+    hits = {}
+    for category in category_vectors:
         hits[category] = {"count": 0, "vector": {}}
 
     for n_gram in test_vector:
-        for category in vectors:
-            if n_gram in vectors[category]:
-                hits[category]["count"] += min(test_vector[n_gram], vectors[category][n_gram])
-                hits[category]["vector"][n_gram] = min(test_vector[n_gram], vectors[category][n_gram])
+        for category in category_vectors:
+            if n_gram in category_vectors[category]["summed"]:
+                hits[category]["count"] += min(test_vector[n_gram], category_vectors[category]["summed"][n_gram])
+                hits[category]["vector"][n_gram] = min(test_vector[n_gram], category_vectors[category]["summed"][n_gram])
 
     # Zbroji ukupna preklapanja kategorije
     category_hits_sum = 0
@@ -306,54 +425,284 @@ def calculate_probabilities(test_vector):
         hits[category]["vector"] = get_sorted_dictionary(hits[category]["vector"])
 
     # Sortiraj kategorije po ukupnom broju preklapanja
-    hits = dict(sorted(hits.items(), key=lambda item: item[1]["count"], reverse=True))
+    if sort:
+        hits = dict(sorted(hits.items(), key=lambda item: item[1]["count"], reverse=True))
 
-    f = open("result.txt", "w", encoding="utf-8")
-    for category in hits:
-        if category_hits_sum > 0:
-            category_percentage = hits[category]["count"] / category_hits_sum * 100
+    result = {}
+    with open("rezultat.txt", "w", encoding="utf-8") as file:
+        for category in hits:
+            if category_hits_sum > 0:
+                category_percentage = hits[category]["count"] / category_hits_sum * 100
+            else:
+                category_percentage = 0
+
+            result[category] = category_percentage
+
+            file.write("{}: {:.2f}% -> {}/{}\n".format(category.upper(), category_percentage, hits[category]["count"], category_hits_sum))
+            for n_gram in hits[category]["vector"]:
+                file.write("'" + n_gram + "': " + str(hits[category]["vector"][n_gram]))
+                file.write("\n")
+            file.write("\n")
+
+    return result
+
+
+def get_probabilities_using_tfidf(test_vector, sort = True):
+    tf = {}
+    for category in category_vectors:
+        tf[category] = {}
+        count_of_n_grams_in_category = 0
+        for n_gram in category_vectors[category]["summed"]:
+            count_of_n_grams_in_category += category_vectors[category]["summed"][n_gram]
+
+        for n_gram in category_vectors[category]["summed"]:
+            if count_of_n_grams_in_category == 0:
+                tf[category][n_gram] = 0
+            else:
+                tf[category][n_gram] = math.log10(category_vectors[category]["summed"][n_gram] / count_of_n_grams_in_category + 1)
+
+        tf[category] = get_sorted_dictionary(tf[category])
+
+    idf = {}
+    for category in category_vectors:
+        idf[category] = {}
+        for n_gram in category_vectors[category]["summed"]:
+            link_count = 0
+            link_count_where_n_gram_appears = 0
+
+            for link in category_vectors[category]["separate"]:
+                link_count += 1
+                if n_gram in category_vectors[category]["separate"][link]:
+                    link_count_where_n_gram_appears += 1
+
+            if link_count_where_n_gram_appears == 0:
+                idf[category][n_gram] = 0
+            else:
+                idf[category][n_gram] = math.log10(link_count / link_count_where_n_gram_appears)
+
+        idf[category] = get_sorted_dictionary(idf[category])
+
+
+    tfidf = {}
+    for category in category_vectors:
+        tfidf[category] = {}
+
+        for n_gram in category_vectors[category]["summed"]:
+            tfidf[category][n_gram] = tf[category][n_gram] * idf[category][n_gram]
+
+        tfidf[category] = get_sorted_dictionary(tfidf[category])
+
+
+    with open("temp/tf.txt", "w", encoding="utf-8") as file:
+        json.dump(tf, file, indent=4)
+
+    with open("temp/idf.txt", "w", encoding="utf-8") as file:
+        json.dump(idf, file, indent=4)
+
+    with open("temp/tfidf.txt", "w", encoding="utf-8") as file:
+        json.dump(tfidf, file, indent=4)
+
+
+    test_tf = {}
+    n_gram_count = 0
+    for n_gram in test_vector:
+        n_gram_count += 1
+
+    for n_gram in test_vector:
+        if n_gram == 0:
+            test_tf[n_gram] = 0
         else:
-            category_percentage = 0
-        print("{}: {:.2f}".format(category, category_percentage))
-        f.write("{}: {:.2f} -> {}".format(category, category_percentage, hits[category]["count"]))
-        f.write("\n")
-        for key in hits[category]["vector"]:
-            f.write(key + ": " + str(hits[category]["vector"][key]))
-            f.write("\n")
-        f.write("\n")
-    f.close()
+            test_tf[n_gram] = math.log10(test_vector[n_gram] / n_gram_count + 1)
+
+
+    hits = {}
+    for category in category_vectors:
+        hits[category] = {"count": 0, "vector": {}}
+
+    for n_gram in test_vector:
+        for category in category_vectors:
+            if n_gram in category_vectors[category]["summed"]:
+                hits[category]["vector"][n_gram] = tfidf[category][n_gram] * test_tf[n_gram]
+                hits[category]["count"] += hits[category]["vector"][n_gram]
+
+    # Zbroji ukupna preklapanja kategorije
+    category_hits_sum = 0
+    for category in hits:
+        category_hits_sum += hits[category]["count"]
+
+        # Sortiraj vektore unutar kategorije po broju preklapanja
+        hits[category]["vector"] = get_sorted_dictionary(hits[category]["vector"])
+
+    # Sortiraj kategorije po ukupnom broju preklapanja
+    if sort:
+        hits = dict(sorted(hits.items(), key=lambda item: item[1]["count"], reverse=True))
+
+    result = {}
+    with open("rezultat.txt", "w", encoding="utf-8") as file:
+        for category in hits:
+            if category_hits_sum > 0:
+                category_percentage = hits[category]["count"] / category_hits_sum * 100
+            else:
+                category_percentage = 0
+
+            result[category] = category_percentage
+
+            file.write("{}: {:.2f}% -> {}/{}\n".format(category, category_percentage, hits[category]["count"], category_hits_sum))
+            file.write("-------------------------\n")
+            for n_gram in hits[category]["vector"]:
+                file.write(n_gram + ": " + str(hits[category]["vector"][n_gram]))
+                file.write("\n")
+            file.write("\n")
+
+    return result
 
 
 
-generate_base_vectors(1)
+settings = {
+    "N": 1,
+    "remove_invalid_words": False,
+    "prefix_suffix_removal": False,
+    "crodict_database": True,
+    "calculation_type": "count",
+}
+generate_base_category_vectors()
 
-while True:
-    print("Unesi 'tekst' za klasifikaciju ručno unesenog teksta.")
-    print("Unesi 'poveznica' za klasifikaciju teksta preuzetog s web-stranice.")
-    print("Unesi 'kraj' za zatvaranje programa.")
+test_links = {
+    "Lud, zbunjen, normalan": "https://hr.wikipedia.org/wiki/Lud,_zbunjen,_normalan",
+    "Oliver Dragojević": "https://hr.wikipedia.org/wiki/Oliver_Dragojevi%C4%87",
+    "Inflacija": "https://hr.wikipedia.org/wiki/Inflacija",
+    "Zoran Milanović": "https://hr.wikipedia.org/wiki/Zoran_Milanovi%C4%87",
+    "Luka Modrić": "https://hr.wikipedia.org/wiki/Luka_Modri%C4%87",
+    "Računalo": "https://hr.wikipedia.org/wiki/Ra%C4%8Dunalo",
+}
 
-    user = input(": ").lower().strip()
+clipboard = ""
+for title in test_links:
+    vector = get_vectors_from_links([test_links[title]])
+    print(title)
+    # print(vector)
+    # print()
+    result = get_probabilities_using_tfidf(vector, False)
 
-    if user == "kraj":
-        break
+    for category in result:
+        clipboard += "{:.2f}%\t".format(result[category])
+    clipboard += "\n"
 
-    elif user == "tekst":
-        print("Unesi tekst. Ostavi prazno za povratak.")
-        user_text = input(": ")
+win32clipboard.OpenClipboard()
+win32clipboard.EmptyClipboard()
+win32clipboard.SetClipboardText(clipboard.replace(".", ","), win32clipboard.CF_UNICODETEXT)
+win32clipboard.CloseClipboard()
+print("Copied to clipboard")
 
-        if user_text == "":
-            continue
 
-        simple_sentences = get_simple_sentences(user_text)
-        vector = get_vector_from_simple_sentences(simple_sentences, 1)
-        calculate_probabilities(vector)
+# while True:
+#     print("Unesi 'tekst' za klasifikaciju ručno unesenog teksta.")
+#     print("Unesi 'poveznica' za klasifikaciju teksta preuzetog s web-stranice.")
+#     print("Unesi 'metoda' za izmjenu metoda klasificiranja.")
+#     print("Unesi 'kraj' za zatvaranje programa.")
 
-    elif user == "poveznica":
-        print("Unesi poveznicu. Ostavi prazno za povratak.")
-        user_link = input(": ")
+#     user = input(": ").lower().strip()
+#     print()
 
-        vector = get_vector_from_links([user_link], 1)
-        calculate_probabilities(vector)
+#     if user == "kraj":
+#         break
+
+#     elif user == "tekst":
+#         print("Unesi tekst. Ostavi prazno za povratak.")
+#         user_text = input(": ")
+
+#         if user_text == "":
+#             continue
+
+#         simple_sentences = get_simple_sentences(user_text)
+#         vector = get_vector_from_simple_sentences(simple_sentences, settings["N"])
+
+#         result = {}
+#         if settings["calculation_type"] == "binary":
+#             result = get_probabilities_using_binary(vector)
+#         elif settings["calculation_type"] == "count":
+#             result = get_probabilities_using_count(vector)
+#         elif settings["calculation_type"] == "tf-idf":
+#             result = get_probabilities_using_tfidf(vector)
+
+#         print()
+#         print("Rezultati klasifikacije:")
+#         for category in result:
+#             print("{}: {:.2f}%".format(category, result[category]))
+#         print()
+
+#     elif user == "poveznica":
+#         print("Unesi poveznicu. Ostavi prazno za povratak.")
+#         user_link = input(": ")
+#         start = time.time()
+#         vector = get_vector_from_links([user_link], settings["N"])
+
+#         result = {}
+#         if settings["calculation_type"] == "binary":
+#             result = get_probabilities_using_binary(vector)
+#         elif settings["calculation_type"] == "count":
+#             result = get_probabilities_using_count(vector)
+#         elif settings["calculation_type"] == "tf-idf":
+#             result = get_probabilities_using_tfidf(vector)
+
+#         print()
+#         print("Rezultati klasifikacije:")
+#         for category in result:
+#             print("{}: {:.2f}%".format(category, result[category]))
+#         print(time.time() - start)
+#         print()
+
+
+#     elif user == "metoda":
+#         print("Unesi 'n-torka N' za izmjenu koliko se riječi povezuje u skup, gdje je N broj riječi.")
+#         print("Unesi 'ukloni-nebitne' za automatsko uklanjanje nebitnih riječi.")
+#         print("Unesi 'dopusti-nebitne' za dopuštanje nebitnih riječi.")
+#         print("Unesi 'omoguci-prefiks-sufiks' za automatsko uklanjanje definiranih prefiksa/sufiksa.")
+#         print("Unesi 'onemoguci-prefiks-sufiks' za onemogaćavanje automatskog uklanjanja definiranih prefiksa/sufiksa.")
+#         print("Unesi 'omoguci-baza-podataka' za automatsko povezivanje n-torki prema njihovim poznatim oblicima.")
+#         print("Unesi 'onemoguci-baza-podataka' za onemogaćavanje automatskog povezivanja n-torki prema njihovim poznatim oblicima.")
+#         print("Unesi 'bodovanje METODA' za izmjenu metode bodovanja n-torki. METODA može biti 'binarno', 'ponavljanje' ili 'tf-idf'.")
+#         print("Ostavi prazno za povratak.")
+
+#         user_method = input(": ")
+
+#         user_method_split = user_method.split(" ")
+#         if user_method_split[0] == "n-torka" and user_method_split[1].isdigit():
+#             if int(user_method_split[1]) in [1, 2, 3, 4]:
+#                 settings["N"] = int(user_method_split[1])
+
+#         elif user_method_split[0] == "bodovanje":
+#             if user_method_split[1] == "binarno":
+#                 settings["calculation_type"] = "binary"
+#             elif user_method_split[1] == "ponavljanje":
+#                 settings["calculation_type"] = "count"
+#             elif user_method_split[1] == "tf-idf":
+#                 settings["calculation_type"] = "tf-idf"
+
+#         elif user_method == "ukloni-nebitne":
+#             settings["remove_invalid_words"] = True
+#         elif user_method == "dopusti-nebitne":
+#             settings["remove_invalid_words"] = False
+
+#         elif user_method == "omoguci-prefiks-sufiks":
+#             settings["prefix_suffix_removal"] = True
+#         elif user_method == "onemoguci-prefiks-sufiks":
+#             settings["prefix_suffix_removal"] = False
+
+#         elif user_method == "omoguci-baza-podataka":
+#             settings["crodict_database"] = True
+#         elif user_method == "onemoguci-baza-podataka":
+#             settings["crodict_database"] = False
+
+#         else:
+#             if user_method != "":
+#                 print("Neispravan unos.")
+#             elif user_method == "":
+#                 pass
+
+#         category_vectors.clear()
+#         generate_base_category_vectors()
+
 
 
 
@@ -361,6 +710,16 @@ while True:
 # tekst = "Marko je išao igrati nogomet. Išao je i David."
 
 # vektor = {'marko': 1, 'je': 2, 'išao': 2, 'igrati': 1, 'nogomet': 1, 'i': 1, 'david': 1}
+
+
+# settings["crodict_database"] = True
+# generate_base_category_vectors()
+
+
+# tekst = "vrabac vrapci ronilac ronioca orahu orasi zadatkom zadaci"
+# vektor = get_vector_from_simple_sentences([tekst])
+
+# print(vektor)
 
 # tekst = tekst.replace(".", "")
 # tekst = tekst.lower()
@@ -374,3 +733,42 @@ while True:
 #         dictionary[word] += 1
 
 # print(dictionary)
+
+
+
+
+# sport idf:        i: 0.1, nogomet: 1,     odbojka: 1.8,   kosarka: 1.2
+
+# sport1 tf:        i: 10,  nogomet: 5,     odbojka: 0,     kosarka: 0
+# sport2 tf:        i: 10,  nogomet: 0,     odbojka: 3,     kosarka: 0
+# sport3 tf:        i: 10,  nogomet: 0,     odbojka: 0,     kosarka: 1
+
+# sport1 tfidf:     i: 1,   nogomet: 5,     odbojka: 0,     kosarka: 0
+# sport2 tfidf:     i: 1,   nogomet: 0,     odbojka: 5.4,   kosarka: 0
+# sport3 tfidf:     i: 1,   nogomet: 0,     odbojka: 0,     kosarka: 1.2
+
+
+# politika idf:     i: 0.1, nogomet: 2,     odbojka: -,     kosarka: -
+
+# politika tf:      i: 10,  nogomet: 1,     odbojka: 0,     kosarka: 0
+# politika tf:      i: 10,  nogomet: 0,     odbojka: 0,     kosarka: 0
+# politika tf:      i: 10,  nogomet: 0,     odbojka: 0,     kosarka: 0
+
+# politika tfidf:   i: 1,   nogomet: 2,     odbojka: 0,     kosarka: 0
+# politika tfidf:   i: 1,   nogomet: 0,     odbojka: 0,     kosarka: 0
+# politika tfidf:   i: 1,   nogomet: 0,     odbojka: 0,     kosarka: 0
+
+
+
+
+
+# luka modrić tf:   i:50,   nogomet: 5,     odbojka: 0.5,   kosarka: 0
+
+# sport             i:50,   nogomet: 25,    odbojka: 2.7,   kosarka: 0
+# politika          i:50,   nogomet: 10,    odbojka: 0,     kosarka: 0
+
+
+# luka modrić tf:   i:50,   nogomet: 5,     odbojka: 0.5,   kosarka: 0
+
+# sport             i:5,   nogomet: 5,    odbojka: 2.7,   kosarka: 0
+# politika          i:5,   nogomet: 10,    odbojka: 0,     kosarka: 0
