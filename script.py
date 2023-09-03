@@ -233,8 +233,6 @@ def generate_base_category_vectors():
         category_vectors[category]["separate"], category_vectors[category]["summed"] = get_vectors_from_links(links, base_vector=True)
         category_vectors[category]["summed"] = get_sorted_dictionary(category_vectors[category]["summed"])
 
-        # print("GENERATED " + category)
-
 
 
 def get_vectors_from_links(links, base_vector = False):
@@ -459,7 +457,7 @@ def get_probabilities_using_tfidf(test_vector, sort = True):
             if count_of_n_grams_in_category == 0:
                 tf[category][n_gram] = 0
             else:
-                tf[category][n_gram] = math.log10(category_vectors[category]["summed"][n_gram] / count_of_n_grams_in_category + 1)
+                tf[category][n_gram] = math.log10(category_vectors[category]["summed"][n_gram] / count_of_n_grams_in_category)
 
         tf[category] = get_sorted_dictionary(tf[category])
 
@@ -492,7 +490,6 @@ def get_probabilities_using_tfidf(test_vector, sort = True):
 
         tfidf[category] = get_sorted_dictionary(tfidf[category])
 
-
     with open("temp/tf.txt", "w", encoding="utf-8") as file:
         json.dump(tf, file, indent=4)
 
@@ -512,7 +509,7 @@ def get_probabilities_using_tfidf(test_vector, sort = True):
         if n_gram == 0:
             test_tf[n_gram] = 0
         else:
-            test_tf[n_gram] = math.log10(test_vector[n_gram] / n_gram_count + 1)
+            test_tf[n_gram] = math.log10(test_vector[n_gram] / n_gram_count)
 
 
     hits = {}
@@ -562,10 +559,11 @@ settings = {
     "N": 1,
     "remove_invalid_words": False,
     "prefix_suffix_removal": False,
-    "crodict_database": True,
+    "crodict_database": False,
     "calculation_type": "count",
 }
 generate_base_category_vectors()
+
 
 test_links = {
     "Lud, zbunjen, normalan": "https://hr.wikipedia.org/wiki/Lud,_zbunjen,_normalan",
