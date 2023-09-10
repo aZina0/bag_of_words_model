@@ -18,7 +18,7 @@ def process_word(word):
     processed_word = word
 
     for prefix in prefixes:
-        # if word.starswith(prefix) and word != prefix and len(word) > 2:
+        # if word.startswith(prefix) and word != prefix and len(word) > 2:
         if word.startswith(prefix) and word != prefix:
             processed_word = word.removeprefix(prefix)
             break

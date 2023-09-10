@@ -5,3 +5,6 @@ temp
 *.png
 *.xlsx
 *.docx
+*.zip
+dist
+program_exe

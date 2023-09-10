@@ -25,6 +25,9 @@ def get_document_content(link):
 
     div_level = 0
     article_start = html.find(div_class_name)
+    if div_class_name == '<div id="mw-content-text"':
+        if link not in ["https://hr.wikipedia.org/wiki/Lud,_zbunjen,_normalan", "https://hr.wikipedia.org/wiki/Zoran_Milanovi%C4%87"]:
+            article_start = html.find('<div class="mw-parser-output"', article_start + 1)
 
     if article_start == -1:
         return "NOTHING"
@@ -36,12 +39,19 @@ def get_document_content(link):
 
         div_level = html.count("<div", last_div_end + 1, div_end)
 
+        # with open("temp/html.txt", "w", encoding="utf-8") as file:
+        #     file.write(html[article_start + len(div_class_name) : div_end])
+
         if div_level == 0:
             break
 
         while div_level > 1:
             div_end = html.find("</div>", div_end + 1)
             div_level -= 1
+
+        # with open("temp/html.txt", "w", encoding="utf-8") as file:
+        #     file.write(html[article_start + len(div_class_name) : div_end])
+
 
     html = html[article_start + len(div_class_name) : div_end]
 

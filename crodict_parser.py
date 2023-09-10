@@ -26,11 +26,11 @@ def get_stem_word(word, request = False):
     for word_type in ["imenice", "glagoli"]:
         try:
             url = requests.get("https://www.crodict.hr/" + word_type + "/hrvatski/" + word)
-            print(word, "REQUESTED")
+            # print(word, "REQUESTED")
             # with open("parsed.txt", "w", encoding="utf-8") as result_file:
             #     result_file.write(url.text)
         except:
-            print("COULDN'T REQUEST HTML")
+            # print("COULDN'T REQUEST HTML")
             continue
 
         if url.text.find("Der gesuchte Begriff konnte nicht gefunden werden") != -1:
