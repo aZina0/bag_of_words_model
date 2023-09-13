@@ -24,6 +24,14 @@ category_vectors = {
     "tehnologija": {},
 }
 
+test_links = {
+    "Lud, zbunjen, normalan": "https://hr.wikipedia.org/wiki/Lud,_zbunjen,_normalan",
+    "Oliver Dragojević": "https://hr.wikipedia.org/wiki/Oliver_Dragojevi%C4%87",
+    "Inflacija": "https://hr.wikipedia.org/wiki/Inflacija",
+    "Zoran Milanović": "https://hr.wikipedia.org/wiki/Zoran_Milanovi%C4%87",
+    "Luka Modrić": "https://hr.wikipedia.org/wiki/Luka_Modri%C4%87",
+    "Računalo": "https://hr.wikipedia.org/wiki/Ra%C4%8Dunalo",
+}
 
 try:
     with open("parsed_links.txt", "r", encoding="utf-8") as parsed_links_file:
@@ -46,8 +54,8 @@ except:
 
 
 def get_simple_sentences(html_text):
-    with open("temp/html.txt", "w", encoding="utf-8") as file:
-        file.write(html_text)
+    # with open("temp/html.txt", "w", encoding="utf-8") as file:
+    #     file.write(html_text)
 
     while html_text.find("<!--") >= 0 and html_text.find("-->") >= 0:
         start_index = html_text.find("<!--")
@@ -248,7 +256,7 @@ def get_vectors_from_links(links, base_vector = False):
         if link in parsed_links:
             simple_sentences = parsed_links[link][:]
         else:
-            text = content_extractor.get_document_content(link)
+            text = content_extractor.get_document_content(link, test_links)
             if text == "NOTHING":
                 try:
                     text = requests.get(link).text
@@ -510,17 +518,10 @@ def get_probabilities_using_tfidf(test_vector, sort = True):
 # }
 generate_base_category_vectors()
 
-# with open("temp/test.txt", "w", encoding="utf-8") as file:
-#     json.dump(category_vectors, file, indent=4)
+with open("temp/category_vectors.txt", "w", encoding="utf-8") as file:
+    json.dump(category_vectors, file, indent=4)
 
-# test_links = {
-#     "Lud, zbunjen, normalan": "https://hr.wikipedia.org/wiki/Lud,_zbunjen,_normalan",
-#     "Oliver Dragojević": "https://hr.wikipedia.org/wiki/Oliver_Dragojevi%C4%87",
-#     "Inflacija": "https://hr.wikipedia.org/wiki/Inflacija",
-#     "Zoran Milanović": "https://hr.wikipedia.org/wiki/Zoran_Milanovi%C4%87",
-#     "Luka Modrić": "https://hr.wikipedia.org/wiki/Luka_Modri%C4%87",
-#     "Računalo": "https://hr.wikipedia.org/wiki/Ra%C4%8Dunalo",
-# }
+
 
 # clipboard = ""
 # for title in test_links:
@@ -562,8 +563,6 @@ while True:
 
         with open("temp/test_vector.txt", "w", encoding="utf-8") as file:
             json.dump(vector, file, indent=4)
-        with open("temp/category_vectors.txt", "w", encoding="utf-8") as file:
-            json.dump(category_vectors, file, indent=4)
 
         result = {}
         if settings["calculation_type"] == "binary":
@@ -587,7 +586,7 @@ while True:
         if user_link != "":
             vector = get_vectors_from_links([user_link])
 
-            with open("temp/test.txt", "w", encoding="utf-8") as file:
+            with open("temp/test_vector.txt", "w", encoding="utf-8") as file:
                 json.dump(vector, file, indent=4)
 
             result = {}
@@ -691,7 +690,11 @@ while True:
                     category_vectors[category].clear()
                 generate_base_category_vectors()
 
+                with open("temp/category_vectors.txt", "w", encoding="utf-8") as file:
+                    json.dump(category_vectors, file, indent=4)
+
         print()
 
     else:
         print("Neispravan unos.")
+        print()
